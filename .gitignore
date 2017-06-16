@@ -102,3 +102,6 @@ ENV/
 out
 gen
 memo.txt
+
+# data dir
+data/
