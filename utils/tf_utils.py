@@ -14,15 +14,8 @@ def activation_summary(x):
     Returns:
         nothing
     """
-    # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
-    # session. This helps the clarity of presentation on tensorboard.
-    #tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
-    #tf.summary.histogram(tensor_name + '/activations', x)
-    #tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
     tf.summary.histogram(x.op.name + '/activations', x)
-    tf.summary.scalar(x.op.name + '/sparsity', tf.nn.zero_fraction(x))
-
-    
+    tf.summary.scalar(x.op.name + '/sparsity', tf.nn.zero_fraction(x))    
     
 def get_initializer(init_type, **params):
     """Helper function to get initialization function.
@@ -41,8 +34,7 @@ def get_initializer(init_type, **params):
     else:
         raise ValueError('Unknown initialization function type')
         
-    return init_func
-    
+    return init_func    
     
 def create_variable(name, shape, initializer, weight_decay=None):
     """Helper function to create a Variable.
@@ -61,7 +53,6 @@ def create_variable(name, shape, initializer, weight_decay=None):
         tf.add_to_collection('losses', weight_decay)
     
     return var
-
 
 def get_conv2D_layer(inp, inp_dim, out_dim, filter_size, stride, initializer, weight_decay, 
                     activation_func='relu', scope=None, write_summary=True):
