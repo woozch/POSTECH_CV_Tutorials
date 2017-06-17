@@ -104,4 +104,11 @@ gen
 memo.txt
 
 # data dir
+COCO_samples/
+
+# image files
 data/
+!data/download.sh
+*.jpg
+*.png
+*.jpeg
