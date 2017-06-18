@@ -92,7 +92,7 @@ class CIFAR10_loader():
     def get_num_classes(self):
         return NUM_CLASSES
     
-    deg get_class_names(self):
+    def get_class_names(self):
         return CLASS_NAMES
         
     def get_batch(self, batch_size, data_type='train'):
