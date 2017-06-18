@@ -28,6 +28,7 @@ IMAGE_SIZE = 32
 NUM_CLASSES = 10
 NUM_TRAIN_EXAMPLES = 50000
 NUM_TEST_EXAMPLES  = 10000
+CLASS_NAMES = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
 class CIFAR10_loader():
     def __init__(self):
@@ -49,7 +50,8 @@ class CIFAR10_loader():
         # load test data
         with open('cifar10_data/cifar-10-batches-py/test_batch', 'r') as file:
             loaded_data = pickle.load(file)
-        self.test_images = loaded_data['data'].astype(float).reshape([-1, 3, IMAGE_SIZE, IMAGE_SIZE]).transpose([0,2,3,1])
+        images = loaded_data['data'].astype(float).reshape([-1, 3, IMAGE_SIZE, IMAGE_SIZE])
+        self.test_images = images.transpose([0,2,3,1])
         self.test_labels = np.asarray(loaded_data['labels'], dtype=int)        
         
         # setting iterator
@@ -89,6 +91,9 @@ class CIFAR10_loader():
     
     def get_num_classes(self):
         return NUM_CLASSES
+    
+    deg get_class_names(self):
+        return CLASS_NAMES
         
     def get_batch(self, batch_size, data_type='train'):
         """ Get batch data """
