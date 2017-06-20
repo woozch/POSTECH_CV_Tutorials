@@ -82,11 +82,6 @@ class CIFAR10_loader():
         
         if shape is not None:
             # TODO: use imresize in scipy.misc to resize the image
-            img_shape = images.shape
-            resized_imgs = np.zeros([img_shape[0], shape[0], shape[1], 3], dtype=float)
-            for ii in range(img_shape[0]):
-                resized_imgs[ii] = imresize(images[ii], shape)
-            images = resized_imgs
         return images / 255.0
     
     def get_num_train_examples(self):
