@@ -77,14 +77,14 @@ def get_conv2D_layer(inp, inp_dim, out_dim, filter_size, stride, initializer, we
     biases = create_variable('biases', [out_dim], initializer)
     
     # apply convolution and add bias
-    conv = tf.nn.conv2d(inp, filters, [1, 1, 1, 1], padding='SAME')
-    pre_activation = tf.nn.bias_add(conv, biases)
+    conv = tf.nn.conv2d(inp, filters, [1, 1, 1, 1], padding='VALID', name=scope.name+'_out')
+    pre_activation = tf.nn.bias_add(conv, biases, name=scope.name+ '_bias_out')
     
     # apply activation function
     if activation_func == 'relu':
-        conv_out = tf.nn.relu(pre_activation, name=scope.name)
+        conv_out = tf.nn.relu(pre_activation, name=scope.name+'_relu')
     elif activation_func == 'tanh':
-        conv_out = tf.tanh(pre_activation, name=scope.name)
+        conv_out = tf.tanh(pre_activation, name=scope.name+'_tanh')
     else:
         conv_out = pre_activation
     
@@ -126,14 +126,14 @@ def get_fully_connected_layer(inp, inp_dim, out_dim, initializer, weight_decay, 
     biases = create_variable('biases', [out_dim], initializer)
     
     # apply linear operation and add bias
-    fc = tf.matmul(reshape, weights)
-    pre_activation = tf.nn.bias_add(fc, biases)
+    fc = tf.matmul(reshape, weights, name=scope.name+'_out')
+    pre_activation = tf.nn.bias_add(fc, biases, name=scope.name+'_bias_out')
     
     # apply activation function
     if activation_func == 'relu':
-        fc_out = tf.nn.relu(pre_activation, name=scope.name)
+        fc_out = tf.nn.relu(pre_activation, name=scope.name+'_relu')
     elif activation_func == 'tanh':
-        fc_out = tf.tanh(pre_activation, name=scope.name)
+        fc_out = tf.tanh(pre_activation, name=scope.name+'_tanh')
     else:
         fc_out = pre_activation
     

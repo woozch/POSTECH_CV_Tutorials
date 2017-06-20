@@ -22,6 +22,7 @@ from __future__ import print_function
 import os
 import pickle
 import numpy as np
+from scipy.misc import imresize
 
 # Global constants describing the CIFAR-10 data set.
 IMAGE_SIZE = 32
@@ -76,8 +77,16 @@ class CIFAR10_loader():
                 self.test_wrapped = True
     
     def _prepro_images(self, images, shape=None):
-        # normalize the images so that each element is
-        # located from [0,255] to [0,1]
+        # Currently only normalize the images so that 
+        # each element is located from [0,255] to [0,1]
+        
+        if shape is not None:
+            # TODO: use imresize in scipy.misc to resize the image
+            img_shape = images.shape
+            resized_imgs = np.zeros([img_shape[0], shape[0], shape[1], 3], dtype=float)
+            for ii in range(img_shape[0]):
+                resized_imgs[ii] = imresize(images[ii], shape)
+            images = resized_imgs
         return images / 255.0
     
     def get_num_train_examples(self):
@@ -94,8 +103,13 @@ class CIFAR10_loader():
     
     def get_class_names(self):
         return CLASS_NAMES
+
+    def reset(self):
+        self.train_iterator = 0
+        self.test_iterator = 0
+        self.test_wrapped = False
         
-    def get_batch(self, batch_size, data_type='train'):
+    def get_batch(self, batch_size, data_type='train', shape=None):
         """ Get batch data """
         batch = {}
         
@@ -115,7 +129,7 @@ class CIFAR10_loader():
             end = self.test_iterator + batch_size
             batch_images = self.test_images[begin:end]
             batch_labels = self.test_labels[begin:end]
-        batch_images = self._prepro_images(batch_images)
+        batch_images = self._prepro_images(batch_images, shape)
         
         batch['images'] = batch_images
         batch['labels'] = batch_labels
