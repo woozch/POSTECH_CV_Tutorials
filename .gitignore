@@ -105,10 +105,15 @@ memo.txt
 
 # data dir
 COCO_samples/
-
-# image files
 data/
+
+# data files
 !data/download.sh
 *.jpg
 *.png
 *.jpeg
+*.tsv
+*.csv
+
+# results
+results/
