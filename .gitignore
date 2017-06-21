@@ -114,6 +114,7 @@ data/
 *.jpeg
 *.tsv
 *.csv
+!001_tensorflow_tutorial/*.jpg
 
 # results
 results/
