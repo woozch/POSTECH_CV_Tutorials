@@ -24,6 +24,8 @@ import pickle
 import numpy as np
 from scipy.misc import imresize
 
+CUR_PATH = os.getcwd()
+VGG_MEAN = np.array([103.939, 116.779, 123.68])
 # Global constants describing the CIFAR-10 data set.
 IMAGE_SIZE = 32
 NUM_CLASSES = 10
@@ -40,7 +42,8 @@ class CIFAR10_loader():
         self.train_labels = np.zeros([NUM_TRAIN_EXAMPLES], dtype=int)
         begin = 0
         for i in range(5):
-            with open('cifar10_data/cifar-10-batches-py/data_batch_%d' % (i+1), 'r') as file:
+            with open(os.path.join(CUR_PATH, '../002_image_classification', 
+                'cifar10_data/cifar-10-batches-py/data_batch_%d') % (i+1), 'r') as file:
                 loaded_data = pickle.load(file)
             images = loaded_data['data'].astype(float).reshape([-1, 3, IMAGE_SIZE, IMAGE_SIZE])
             labels = loaded_data['labels']
@@ -49,7 +52,8 @@ class CIFAR10_loader():
             begin += len(labels)
         
         # load test data
-        with open('cifar10_data/cifar-10-batches-py/test_batch', 'r') as file:
+        with open(os.path.join(CUR_PATH, '../002_image_classification', 
+            'cifar10_data/cifar-10-batches-py/test_batch')) as file:
             loaded_data = pickle.load(file)
         images = loaded_data['data'].astype(float).reshape([-1, 3, IMAGE_SIZE, IMAGE_SIZE])
         self.test_images = images.transpose([0,2,3,1])
@@ -81,8 +85,20 @@ class CIFAR10_loader():
         # each element is located from [0,255] to [0,1]
         
         if shape is not None:
-            # TODO: use imresize in scipy.misc to resize the image
-        return images / 255.0
+            img_shape = images.shape
+            # resize
+            resized_imgs = np.zeros([img_shape[0], shape[0], shape[1], 3], dtype=float)
+            for ii in range(img_shape[0]):
+                resized_imgs[ii] = imresize(images[ii], shape)                                                                  
+            images = resized_imgs
+            # convert RGB to BGR
+            images = images[:,:,:,[2,1,0]]
+            # subtract mean
+            #images = images - VGG_MEAN
+        else:
+            images = images / 255.0
+
+        return images 
     
     def get_num_train_examples(self):
         return NUM_TRAIN_EXAMPLES
