@@ -13,7 +13,7 @@ import tensorflow as tf
 VGG_MEAN = [103.939, 116.779, 123.68]
 
 
-class FCN16VGG:
+class FCN:
 
     def __init__(self, vgg16_npy_path=None):
         if vgg16_npy_path is None:
@@ -55,7 +55,7 @@ class FCN16VGG:
         # Convert RGB to BGR
 
         with tf.name_scope('Processing'):
-            # rgb = tf.image.convert_image_dtype(rgb, tf.float32)
+
             red, green, blue = tf.split(rgb, 3, 3)
             # assert red.get_shape().as_list()[1:] == [224, 224, 1]
             # assert green.get_shape().as_list()[1:] == [224, 224, 1]
@@ -63,7 +63,8 @@ class FCN16VGG:
             bgr = tf.concat([
                 blue - VGG_MEAN[0],
                 green - VGG_MEAN[1],
-                red - VGG_MEAN[2]], axis=3)
+                red - VGG_MEAN[2],
+            ], 3)
 
             if debug:
                 bgr = tf.Print(bgr, [tf.shape(bgr)],
@@ -90,7 +91,6 @@ class FCN16VGG:
 
         self.conv5_1 = self._conv_layer(self.pool4, "conv5_1")
         self.conv5_2 = self._conv_layer(self.conv5_1, "conv5_2")
-
         self.conv5_3 = self._conv_layer(self.conv5_2, "conv5_3")
         self.pool5 = self._max_pool(self.conv5_3, 'pool5', debug)
 
@@ -113,24 +113,12 @@ class FCN16VGG:
 
         self.pred = tf.argmax(self.score_fr, dimension=3)
 
-        self.upscore2 = self._upscore_layer(self.score_fr,
-                                            shape=tf.shape(self.pool4),
-                                            num_classes=num_classes,
-                                            debug=debug, name='upscore2',
-                                            ksize=4, stride=2)
+        self.upscore = self._upscore_layer(self.score_fr, shape=tf.shape(bgr),
+                                           num_classes=num_classes,
+                                           debug=debug,
+                                           name='up', ksize=64, stride=32)
 
-        self.score_pool4 = self._score_layer(self.pool4, "score_pool4",
-                                             num_classes=num_classes)
-
-        self.fuse_pool4 = tf.add(self.upscore2, self.score_pool4)
-
-        self.upscore32 = self._upscore_layer(self.fuse_pool4,
-                                             shape=tf.shape(bgr),
-                                             num_classes=num_classes,
-                                             debug=debug, name='upscore32',
-                                             ksize=32, stride=16)
-
-        self.pred_up = tf.argmax(self.upscore32, dimension=3)
+        self.pred_up = tf.argmax(self.upscore, dimension=3)
 
     def _max_pool(self, bottom, name, debug):
         pool = tf.nn.max_pool(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
@@ -188,11 +176,8 @@ class FCN16VGG:
             in_features = bottom.get_shape()[3].value
             shape = [1, 1, in_features, num_classes]
             # He initialization Sheme
-            if name == "score_fr":
-                num_input = in_features
-                stddev = (2 / num_input)**0.5
-            elif name == "score_pool4":
-                stddev = 0.001
+            num_input = in_features
+            stddev = (2 / num_input)**0.5
             # Apply convolution
             w_decay = self.wd
             weights = self._variable_with_weight_decay(shape, stddev, w_decay)
@@ -394,7 +379,6 @@ class FCN16VGG:
         init = tf.constant_initializer(value=weights,
                                        dtype=tf.float32)
         return tf.get_variable(name="weights", initializer=init, shape=shape)
-
 
 def _activation_summary(x):
     """Helper to create summaries for activations.
