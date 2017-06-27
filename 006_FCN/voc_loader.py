@@ -44,23 +44,24 @@ class VOC_loader():
         self.split_root = params['split_root']
         self.image_root = params['image_root'] #'VOCdevkit/VOC2012/JPEGImages'
         self.segmap_root = params['segmap_root'] #'VOCdevkit/VOC2012/SegmentationClass'
-        
+        self.files = {}
+
         # load training data
         train_list = os.path.join(self.split_root, 'train.txt')
         with open(train_list, 'r') as file:
-           self.train_files = file.readlines()
-        self.train_files = [l.strip() for l in self.train_files]
+           train_files = file.readlines()
+        self.files['train'] = [l.strip() for l in train_files]
 
         # load testing data
         test_list = os.path.join(self.split_root, 'val.txt')
-        with open(train_list, 'r') as file:
-           self.test_files = file.readlines()
-        self.test_files = [l.strip() for l in self.test_files]
+        with open(test_list, 'r') as file:
+           test_files = file.readlines()
+        self.files['test'] = [l.strip() for l in test_files]
 
         # maintain statistics
         self.num_data = {
-                'train': len(self.train_files),
-                'test': len(self.test_files),
+                'train': len(self.files['train']),
+                'test': len(self.files['test']),
             }
 
         # setting iterator
@@ -73,7 +74,7 @@ class VOC_loader():
         # pallete
         self.palette = None
         
-    def _increment_iterator(self, batch_size, split):
+    def _increment_iterator(self, split):
         self.iterator[split] += 1
 
         if self.iterator[split] == self.num_data[split]:
@@ -128,25 +129,34 @@ class VOC_loader():
         self.iterator['test'] = 0
         self.test_wrapped = False
         
-    def get_batch(self, batch_size, split='train', random_crop=False, flip=False):
+    def get_batch(self, batch_size, split='train', random_crop=False, 
+            flip=False, debug = False):
         """ Get batch data """
         batch = {}
         
-        if split == 'test' and self.test_wrapped:    
+        if split == 'test' and self.test_wrapped:
             batch['wrapped'] = self.test_wrapped
             return batch
 
         # extract images and labels of batch size
-        batch_images = np.zeros((batch_size, self.image_size, self.image_size, 3), dtype=np.float)
+        batch_images = np.zeros((batch_size, self.image_size, self.image_size, 3), \
+                dtype=np.float)
         batch_seg_maps = []
-        batch_seg_labels = np.zeros((batch_size, self.image_size, self.image_size), 
+        batch_seg_labels = np.zeros((batch_size, self.image_size, self.image_size), \
                 dtype=np.uint8)
 
-        it = self.iterator[split]
         for bi in range(batch_size):
             # load image and segmentation map
-            img = Image.open(os.path.join(self.image_root, self.train_files[it] + '.jpg'))
-            seg_label = Image.open(os.path.join(self.segmap_root, self.train_files[it] + '.png'))
+            it = self.iterator[split]
+            img = Image.open(os.path.join(self.image_root, \
+                    self.files[split][it] + '.jpg'))
+            seg_label = Image.open(os.path.join(self.segmap_root, \
+                    self.files[split][it] + '.png'))
+
+            if debug and (bi == 0):
+                origin_image = np.asarray(img, dtype=np.float)
+                origin_seg_map = np.asarray(seg_label.convert('RGB'), dtype=np.uint8)
+                origin_seg_label = np.asarray(seg_label, dtype=np.uint8)
 
             if self.palette is None:
                 self.palette = seg_label.getpalette()
@@ -157,10 +167,14 @@ class VOC_loader():
             batch_seg_maps.append(seg_map)
 
             # increment the iterator
-            self._increment_iterator(batch_size, split)
+            self._increment_iterator(split)
 
         # change index of the boundary label from 255 to 21
         np.place(batch_seg_labels, batch_seg_labels==255, 21)
+        if debug:
+            batch['origin_image'] = origin_image
+            batch['origin_seg_map'] = origin_seg_map
+            batch['origin_seg_label'] = origin_seg_label
         batch['images'] = batch_images
         batch['seg_maps'] = batch_seg_maps
         batch['seg_labels'] = batch_seg_labels
