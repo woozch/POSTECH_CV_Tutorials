@@ -9,39 +9,24 @@ import sys
 
 import numpy as np
 import tensorflow as tf
+slim = tf.contrib.slim
 
 VGG_MEAN = [103.939, 116.779, 123.68]
 
-
 class FCN:
 
-    def __init__(self, vgg16_npy_path=None):
-        if vgg16_npy_path is None:
-            path = sys.modules[self.__class__.__module__].__file__
-            # print path
-            path = os.path.abspath(os.path.join(path, os.pardir))
-            # print path
-            path = os.path.join(path, "vgg16.npy")
-            vgg16_npy_path = path
-            logging.info("Load npy file from '%s'.", vgg16_npy_path)
-        if not os.path.isfile(vgg16_npy_path):
-            logging.error(("File '%s' not found. Download it from "
-                           "ftp://mi.eng.cam.ac.uk/pub/mttt2/"
-                           "models/vgg16.npy"), vgg16_npy_path)
-            sys.exit(1)
-
-        self.data_dict = np.load(vgg16_npy_path, encoding='latin1').item()
+    def __init__(self):
         self.wd = 5e-4
-        print("npy file loaded")
 
-    def build(self, rgb, train=False, num_classes=20, random_init_fc8=False,
-              debug=False):
+    def build(self, rgb, net_type='fcn_32s', train=False, num_classes=20, 
+            random_init_fc8=False, debug=False):
         """
         Build the VGG model using loaded weights
         Parameters
         ----------
         rgb: image batch tensor
             Image in rgb shap. Scaled to Intervall [0, 255]
+        net:type: Network type [fcn_32s, fcn_16s, fcn_8s, deconvNet]
         train: bool
             Whether to build train or inference graph
         num_classes: int
@@ -52,8 +37,8 @@ class FCN:
         debug: bool
             Whether to print additional Debug Information.
         """
+        
         # Convert RGB to BGR
-
         with tf.name_scope('Processing'):
 
             red, green, blue = tf.split(rgb, 3, 3)
@@ -71,163 +56,72 @@ class FCN:
                                message='Shape of input image: ',
                                summarize=4, first_n=1)
 
-        self.conv1_1 = self._conv_layer(bgr, "conv1_1")
-        self.conv1_2 = self._conv_layer(self.conv1_1, "conv1_2")
-        self.pool1 = self._max_pool(self.conv1_2, 'pool1', debug)
+        with tf.variable_scope('vgg_16', values=[bgr]) as sc:
+            with slim.arg_scope([slim.conv2d, slim.fully_connected, slim.max_pool2d]):
 
-        self.conv2_1 = self._conv_layer(self.pool1, "conv2_1")
-        self.conv2_2 = self._conv_layer(self.conv2_1, "conv2_2")
-        self.pool2 = self._max_pool(self.conv2_2, 'pool2', debug)
+                self.conv1_2 = slim.repeat(bgr, 2, slim.conv2d, 64, 
+                        [3,3], scope='conv1')
+                self.pool1 = slim.max_pool2d(self.conv1_2, [2,2], scope='pool1')
 
-        self.conv3_1 = self._conv_layer(self.pool2, "conv3_1")
-        self.conv3_2 = self._conv_layer(self.conv3_1, "conv3_2")
-        self.conv3_3 = self._conv_layer(self.conv3_2, "conv3_3")
-        self.pool3 = self._max_pool(self.conv3_3, 'pool3', debug)
+                self.conv2_2 = slim.repeat(self.pool1, 2, slim.conv2d, 
+                        128, [3,3], scope='conv2')
+                self.pool2 = slim.max_pool2d(self.conv2_2, [2,2], scope='pool2')
 
-        self.conv4_1 = self._conv_layer(self.pool3, "conv4_1")
-        self.conv4_2 = self._conv_layer(self.conv4_1, "conv4_2")
-        self.conv4_3 = self._conv_layer(self.conv4_2, "conv4_3")
-        self.pool4 = self._max_pool(self.conv4_3, 'pool4', debug)
+                self.conv3_3 = slim.repeat(self.pool2, 3, slim.conv2d, 
+                        256, [3,3], scope='conv3')
+                self.pool3 = slim.max_pool2d(self.conv3_3, [2,2], scope='pool3')
 
-        self.conv5_1 = self._conv_layer(self.pool4, "conv5_1")
-        self.conv5_2 = self._conv_layer(self.conv5_1, "conv5_2")
-        self.conv5_3 = self._conv_layer(self.conv5_2, "conv5_3")
-        self.pool5 = self._max_pool(self.conv5_3, 'pool5', debug)
+                self.conv4_3 = slim.repeat(self.pool3, 3, slim.conv2d, 
+                        512, [3,3], scope='conv4')
+                self.pool4 = slim.max_pool2d(self.conv4_3, [2,2], scope='pool4')
 
-        self.fc6 = self._fc_layer(self.pool5, "fc6")
+                self.conv5_3 = slim.repeat(self.pool4, 3, slim.conv2d, 
+                        512, [3,3], scope='conv5')
+                self.pool5 = slim.max_pool2d(self.conv5_3, [2,2], scope='pool5')
 
-        if train:
-            self.fc6 = tf.nn.dropout(self.fc6, 0.5)
+                self.fc6 = slim.conv2d(self.pool5, 4096, [7,7], padding='SAME', scope='fc6')
+                self.fc6 = slim.dropout(self.fc6, 0.5, is_training=train, scope='dropout6')
 
-        self.fc7 = self._fc_layer(self.fc6, "fc7")
-        if train:
-            self.fc7 = tf.nn.dropout(self.fc7, 0.5)
+                self.fc7 = slim.conv2d(self.fc6, 4096, [1,1], padding='SAME', scope='fc7')
+                self.fc7 = slim.dropout(self.fc7, 0.5, is_training=train, scope='dropout7')
 
-        if random_init_fc8:
-            self.score_fr = self._score_layer(self.fc7, "score_fr",
-                                              num_classes)
-        else:
-            self.score_fr = self._fc_layer(self.fc7, "score_fr",
-                                           num_classes=num_classes,
-                                           relu=False)
+                self.score_fr = slim.conv2d(self.fc7, num_classes, [1,1], padding='SAME',
+                        activation_fn=None, normalizer_fn=None, scope='score_fr')
 
         self.pred = tf.argmax(self.score_fr, dimension=3)
+        if net_type == 'fcn_32s':
+            self.upscore = self._upscore_layer(self.score_fr, 
+                    output_shape=tf.shape(bgr),
+                    out_dims=num_classes,
+                    debug=debug,
+                    name='up', ksize=64, stride=32)
 
-        self.upscore = self._upscore_layer(self.score_fr, shape=tf.shape(bgr),
-                                           num_classes=num_classes,
-                                           debug=debug,
-                                           name='up', ksize=64, stride=32)
+        elif net_type == 'fcn_16s':
+            # TODO: implement fcn_16s
+            TODO = True
+            self.upscore2 = self._upscore_layer(self.score_fr,
+                    output_shape = tf.shape(self.pool4),
+                    out_dims = num_classes,
+                    debug = debug, name = 'upscore2',
+                    ksize = 4, stride = 2)
+            self.score_pool4 = slim.conv2d(self.pool4, num_classes, [1,1], padding='SAME',
+                    activation_fn=None, normalizer_fn=None, scope='score_pool4')
+            self.fuse_pool4 = tf.add(self.upscore2, self.score_pool4)
+            self.upscore = self._upscore_layer(self.fuse_pool4,
+                    output_shape = tf.shape(bgr),
+                    out_dims = num_classes,
+                    debug = debug, name = 'upscore32',
+                    ksize = 32, stride = 16)
+        elif net_type == 'fcn_8s':
+            # TODO: implement fcn_8s
+            TODO = True
+        else:
+            # TODO: implement deconvNet
+            TODO = True
 
         self.pred_up = tf.argmax(self.upscore, dimension=3)
 
-    def _max_pool(self, bottom, name, debug):
-        pool = tf.nn.max_pool(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                              padding='SAME', name=name)
-
-        if debug:
-            pool = tf.Print(pool, [tf.shape(pool)],
-                            message='Shape of %s' % name,
-                            summarize=4, first_n=1)
-        return pool
-
-    def _conv_layer(self, bottom, name):
-        with tf.variable_scope(name) as scope:
-            filt = self.get_conv_filter(name)
-            conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
-
-            conv_biases = self.get_bias(name)
-            bias = tf.nn.bias_add(conv, conv_biases)
-
-            relu = tf.nn.relu(bias)
-            # Add summary to Tensorboard
-            _activation_summary(relu)
-            return relu
-
-    def _fc_layer(self, bottom, name, num_classes=None,
-                  relu=True, debug=False):
-        with tf.variable_scope(name) as scope:
-            shape = bottom.get_shape().as_list()
-
-            if name == 'fc6':
-                filt = self.get_fc_weight_reshape(name, [7, 7, 512, 4096])
-            elif name == 'score_fr':
-                name = 'fc8'  # Name of score_fr layer in VGG Model
-                filt = self.get_fc_weight_reshape(name, [1, 1, 4096, 1000],
-                                                  num_classes=num_classes)
-            else:
-                filt = self.get_fc_weight_reshape(name, [1, 1, 4096, 4096])
-            conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
-            conv_biases = self.get_bias(name, num_classes=num_classes)
-            bias = tf.nn.bias_add(conv, conv_biases)
-
-            if relu:
-                bias = tf.nn.relu(bias)
-            _activation_summary(bias)
-
-            if debug:
-                bias = tf.Print(bias, [tf.shape(bias)],
-                                message='Shape of %s' % name,
-                                summarize=4, first_n=1)
-            return bias
-
-    def _score_layer(self, bottom, name, num_classes):
-        with tf.variable_scope(name) as scope:
-            # get number of input channels
-            in_features = bottom.get_shape()[3].value
-            shape = [1, 1, in_features, num_classes]
-            # He initialization Sheme
-            num_input = in_features
-            stddev = (2 / num_input)**0.5
-            # Apply convolution
-            w_decay = self.wd
-            weights = self._variable_with_weight_decay(shape, stddev, w_decay)
-            conv = tf.nn.conv2d(bottom, weights, [1, 1, 1, 1], padding='SAME')
-            # Apply bias
-            conv_biases = self._bias_variable([num_classes], constant=0.0)
-            bias = tf.nn.bias_add(conv, conv_biases)
-
-            _activation_summary(bias)
-
-            return bias
-
-    def _upscore_layer(self, bottom, shape,
-                       num_classes, name, debug,
-                       ksize=4, stride=2):
-        strides = [1, stride, stride, 1]
-        with tf.variable_scope(name):
-            in_features = bottom.get_shape()[3].value
-
-            if shape is None:
-                # Compute shape out of Bottom
-                in_shape = tf.shape(bottom)
-
-                h = ((in_shape[1] - 1) * stride) + 1
-                w = ((in_shape[2] - 1) * stride) + 1
-                new_shape = [in_shape[0], h, w, num_classes]
-            else:
-                new_shape = [shape[0], shape[1], shape[2], num_classes]
-            output_shape = tf.stack(new_shape)
-
-            logging.debug("Layer: %s, Fan-in: %d" % (name, in_features))
-            f_shape = [ksize, ksize, num_classes, in_features]
-
-            # create
-            num_input = ksize * ksize * in_features / stride
-            stddev = (2 / num_input)**0.5
-
-            weights = self.get_deconv_filter(f_shape)
-            deconv = tf.nn.conv2d_transpose(bottom, weights, output_shape,
-                                            strides=strides, padding='SAME')
-
-            if debug:
-                deconv = tf.Print(deconv, [tf.shape(deconv)],
-                                  message='Shape of %s' % name,
-                                  summarize=4, first_n=1)
-
-        _activation_summary(deconv)
-        return deconv
-
-    def get_deconv_filter(self, f_shape):
+    def _get_bilinear_filter(self, f_shape):
         width = f_shape[0]
         heigh = f_shape[0]
         f = ceil(width/2.0)
@@ -245,140 +139,80 @@ class FCN:
                                        dtype=tf.float32)
         return tf.get_variable(name="up_filter", initializer=init,
                                shape=weights.shape)
+    def _upscore_layer(self, bottom, output_shape,
+                       out_dims, name, debug,
+                       ksize=4, stride=2):
 
-    def get_conv_filter(self, name):
-        init = tf.constant_initializer(value=self.data_dict[name][0],
-                                       dtype=tf.float32)
-        shape = self.data_dict[name][0].shape
-        print('Layer name: %s' % name)
-        print('Layer shape: %s' % str(shape))
-        var = tf.get_variable(name="filter", initializer=init, shape=shape)
-        if not tf.get_variable_scope().reuse:
-            weight_decay = tf.multiply(tf.nn.l2_loss(var), self.wd,
-                                       name='weight_loss')
-            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                                 weight_decay)
-        return var
+        # inp_shape = (batch, height, width, in_imds)
+        with tf.variable_scope(name):
 
-    def get_bias(self, name, num_classes=None):
-        bias_wights = self.data_dict[name][1]
-        shape = self.data_dict[name][1].shape
-        if name == 'fc8':
-            bias_wights = self._bias_reshape(bias_wights, shape[0],
-                                             num_classes)
-            shape = [num_classes]
-        init = tf.constant_initializer(value=bias_wights,
-                                       dtype=tf.float32)
-        return tf.get_variable(name="biases", initializer=init, shape=shape)
+            # Compute parameters for deconvolution 
+            # Obtain bilinear filter weight (height, width, out_dims, in_dims) 
+            in_dims = bottom.get_shape()[3].value
+            f_shape = [ksize, ksize, out_dims, in_dims]
+            weights = self._get_bilinear_filter(f_shape)
 
-    def get_fc_weight(self, name):
-        init = tf.constant_initializer(value=self.data_dict[name][0],
-                                       dtype=tf.float32)
-        shape = self.data_dict[name][0].shape
-        var = tf.get_variable(name="weights", initializer=init, shape=shape)
-        if not tf.get_variable_scope().reuse:
-            weight_decay = tf.multiply(tf.nn.l2_loss(var), self.wd,
-                                       name='weight_loss')
-            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                                 weight_decay)
-        return var
+            # Obtain output shape
+            out_shape = tf.stack([output_shape[0], output_shape[1], output_shape[2], out_dims])
+            # Obtain stride parameter
+            strides = [1, stride, stride, 1]
+            deconv = tf.nn.conv2d_transpose(bottom, weights, out_shape,
+                    strides, padding='SAME')
 
-    def _bias_reshape(self, bweight, num_orig, num_new):
-        """ Build bias weights for filter produces with `_summary_reshape`
+            if debug:
+                deconv = tf.Print(deconv, [tf.shape(deconv)],
+                                  message='Shape of %s' % name,
+                                  summarize=4, first_n=1)
 
-        """
-        n_averaged_elements = num_orig//num_new
-        avg_bweight = np.zeros(num_new)
-        for i in range(0, num_orig, n_averaged_elements):
-            start_idx = i
-            end_idx = start_idx + n_averaged_elements
-            avg_idx = start_idx//n_averaged_elements
-            if avg_idx == num_new:
-                break
-            avg_bweight[avg_idx] = np.mean(bweight[start_idx:end_idx])
-        return avg_bweight
+        _activation_summary(deconv)
+        return deconv
 
-    def _summary_reshape(self, fweight, shape, num_new):
-        """ Produce weights for a reduced fully-connected layer.
+    def _get_deconv_layer(self, x, w_shape, b_shape, name, padding='SAME'):
+        w = self._get_weight_variable(w_shape)
+        b = self._get_bias_variable([b_shape])
 
-        FC8 of VGG produces 1000 classes. Most semantic segmentation
-        task require much less classes. This reshapes the original weights
-        to be used in a fully-convolutional layer which produces num_new
-        classes. To archive this the average (mean) of n adjanced classes is
-        taken.
+        x_shape = tf.shape(x)
+        out_shape = tf.stack([x_shape[0], x_shape[1], x_shape[2], w_shape[2]])
 
-        Consider reordering fweight, to perserve semantic meaning of the
-        weights.
+        deconv = tf.nn.conv2d_transpose(x, w, out_shape, [1,1,1,1], padding=padding)
+        deconv_bias = tf.nn.bias_add(deconv, b)
 
-        Args:
-          fweight: original weights
-          shape: shape of the desired fully-convolutional layer
-          num_new: number of new classes
+        return deconv_bias
 
+    def _unravel_argmax(self, argmax, shape):
+        output_list = []
+        output_list.append(argmax // (shape[2] * shape[3]))
+        output_list.append(argmax % (shape[2] * shape[3]) // shape[3])
+        return tf.pack(output_list)
 
-        Returns:
-          Filter weights for `num_new` classes.
-        """
-        num_orig = shape[3]
-        shape[3] = num_new
-        assert(num_new < num_orig)
-        n_averaged_elements = num_orig//num_new
-        avg_fweight = np.zeros(shape)
-        for i in range(0, num_orig, n_averaged_elements):
-            start_idx = i
-            end_idx = start_idx + n_averaged_elements
-            avg_idx = start_idx//n_averaged_elements
-            if avg_idx == num_new:
-                break
-            avg_fweight[:, :, :, avg_idx] = np.mean(
-                fweight[:, :, :, start_idx:end_idx], axis=3)
-        return avg_fweight
+    def _get_unpool_layer2x2(self, x, raveled_argmax, out_shape):
+        argmax = self.unravel_argmax(raveled_argmax, tf.to_int64(out_shape))
+        output = tf.zeros([out_shape[1], out_shape[2], out_shape[3]])
 
-    def _variable_with_weight_decay(self, shape, stddev, wd):
-        """Helper to create an initialized Variable with weight decay.
+        height = tf.shape(output)[0]
+        width = tf.shape(output)[1]
+        channels = tf.shape(output)[2]
 
-        Note that the Variable is initialized with a truncated normal
-        distribution.
-        A weight decay is added only if one is specified.
+        t1 = tf.to_int64(tf.range(channels))
+        t1 = tf.tile(t1, [((width + 1) // 2) * ((height + 1) // 2)])
+        t1 = tf.reshape(t1, [-1, channels])
+        t1 = tf.transpose(t1, perm=[1, 0])
+        t1 = tf.reshape(t1, [channels, (height + 1) // 2, (width + 1) // 2, 1])
 
-        Args:
-          name: name of the variable
-          shape: list of ints
-          stddev: standard deviation of a truncated Gaussian
-          wd: add L2Loss weight decay multiplied by this float. If None, weight
-              decay is not added for this Variable.
+        t2 = tf.squeeze(argmax)
+        t2 = tf.pack((t2[0], t2[1]), axis=0)
+        t2 = tf.transpose(t2, perm=[3, 1, 2, 0])
 
-        Returns:
-          Variable Tensor
-        """
+        t = tf.concat(3, [t2, t1])
+        indices = tf.reshape(t, [((height + 1) // 2) * ((width + 1) // 2) * channels, 3])
 
-        initializer = tf.truncated_normal_initializer(stddev=stddev)
-        var = tf.get_variable('weights', shape=shape,
-                              initializer=initializer)
+        x1 = tf.squeeze(x)
+        x1 = tf.reshape(x1, [-1, channels])
+        x1 = tf.transpose(x1, perm=[1, 0])
+        values = tf.reshape(x1, [-1])
 
-        if wd and (not tf.get_variable_scope().reuse):
-            weight_decay = tf.multiply(
-                tf.nn.l2_loss(var), wd, name='weight_loss')
-            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                                 weight_decay)
-        return var
-
-    def _bias_variable(self, shape, constant=0.0):
-        initializer = tf.constant_initializer(constant)
-        return tf.get_variable(name='biases', shape=shape,
-                               initializer=initializer)
-
-    def get_fc_weight_reshape(self, name, shape, num_classes=None):
-        print('Layer name: %s' % name)
-        print('Layer shape: %s' % shape)
-        weights = self.data_dict[name][0]
-        weights = weights.reshape(shape)
-        if num_classes is not None:
-            weights = self._summary_reshape(weights, shape,
-                                            num_new=num_classes)
-        init = tf.constant_initializer(value=weights,
-                                       dtype=tf.float32)
-        return tf.get_variable(name="weights", initializer=init, shape=shape)
+        delta = tf.SparseTensor(indices, values, tf.to_int64(tf.shape(output)))
+        return tf.expand_dims(tf.sparse_tensor_to_dense(tf.sparse_reorder(delta)), 0)
 
 def _activation_summary(x):
     """Helper to create summaries for activations.
@@ -391,9 +225,6 @@ def _activation_summary(x):
     Returns:
       nothing
     """
-    # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
-    # session. This helps the clarity of presentation on tensorboard.
     tensor_name = x.op.name
-    # tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
     tf.summary.histogram(tensor_name + '/activations', x)
     tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
