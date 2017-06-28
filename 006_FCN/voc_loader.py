@@ -91,14 +91,15 @@ class VOC_loader():
             image = image.resize((img_size,img_size))
             seg_label = seg_label.resize((img_size,img_size), resample=PIL.Image.NEAREST)
 
-            # TODO: crop the region
+            # TODO 1: crop the region
+            # Use image.crop((left, top, right, bottom))
 
         else:
             image = image.resize((img_size,img_size))
             seg_label = seg_label.resize((img_size,img_size), resample=PIL.Image.NEAREST)
 
         if flip:
-            # TODO
+            # TODO 1
             TODO = True
 
         # return image, seg_map, seg_label
